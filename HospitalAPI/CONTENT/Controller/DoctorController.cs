@@ -1,4 +1,5 @@
 ﻿using AuthProjWebApi.Auth;
+using HospitalAPI.CONTENT.DTO_s;
 using HospitalAPI.Models;
 using HospitalAPI.Packages;
 using Microsoft.AspNetCore.Http;
@@ -20,20 +21,39 @@ namespace HospitalAPI.Controller
             this.jwtManager = jwtManager;
             _logger = logger;
         }
+        //[HttpPost]
+        //public IActionResult RegisterDoctor(Doctor doctor)
+        //{
+        //    try
+        //    {
+        //        package.RegisterDoctor(doctor);
+        //        return Ok(new { message = "Doctor registered successfully" });
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        if (ex.Message.Contains("already exists"))
+        //        {
+        //            return Conflict(new { message = ex.Message });
+        //        }
+        //        _logger.LogError(ex, "Error registering doctor");
+        //        return StatusCode(StatusCodes.Status500InternalServerError,
+        //            new { message = "An error occurred while registering the doctor" });
+        //    }
+        //}
         [HttpPost]
-        public IActionResult RegisterDoctor(Doctor doctor)
+        public async Task<IActionResult> RegisterDoctor([FromForm] Doctor doctor, IFormFile photo, IFormFile cv)
         {
             try
             {
-                package.RegisterDoctor(doctor);
-                return Ok(new { message = "Doctor registered successfully" });
+                var (success, message) = await package.RegisterDoctor(doctor, photo, cv);
+                if (!success)
+                {
+                    return BadRequest(new { message });
+                }
+                return Ok(new { message });
             }
             catch (Exception ex)
             {
-                if (ex.Message.Contains("already exists"))
-                {
-                    return Conflict(new { message = ex.Message });
-                }
                 _logger.LogError(ex, "Error registering doctor");
                 return StatusCode(StatusCodes.Status500InternalServerError,
                     new { message = "An error occurred while registering the doctor" });
@@ -41,44 +61,69 @@ namespace HospitalAPI.Controller
         }
 
         [HttpGet("photo/{id}")]
-        public IActionResult GetDoctorPhoto(int id)
+        public async Task<IActionResult> GetDoctorPhoto(int id)
         {
             try
             {
-                var photoData = package.GetDoctorPhoto(id);
-                if(photoData == null)
+                _logger.LogInformation("Retrieving photo for doctor ID: {Id}", id);
+                var photoData = await package.GetDoctorPhoto(id);
+
+                _logger.LogInformation("Photo data length: {Length} bytes", photoData?.Length ?? 0);
+
+                if (photoData == null || photoData.Length == 0)
                 {
+                    _logger.LogWarning("No photo found for doctor ID: {Id}", id);
                     return NotFound();
                 }
+
+                _logger.LogInformation("Successfully retrieved photo for doctor ID: {Id}", id);
                 return File(photoData, "image/jpeg");
-            }
-            catch(Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving doctor photo");
-                return StatusCode(500, "Error retrieving photo");
-            }
-
-        }
-
-        [HttpGet("cv/{id}")]
-        public IActionResult GetDoctorCV(int id)
-        {
-            try
-            {
-                var cvData = package.GetDoctorCV(id);
-                if (cvData == null)
-                {
-                    return NotFound();
-                }
-                return File(cvData, "application/pdf"); 
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving doctor CV");
+                _logger.LogError(ex, "Error retrieving doctor photo for ID: {Id}", id);
+                return StatusCode(500, "Error retrieving photo");
+            }
+        }
+
+        [HttpGet("cv/{id}")]
+        public async Task<IActionResult> GetDoctorCV(int id)
+        {
+            try
+            {
+                _logger.LogInformation("Retrieving CV for doctor ID: {Id}", id);
+                var cvData = await package.GetDoctorCV(id);
+
+                if (cvData == null || cvData.Length == 0)
+                {
+                    _logger.LogWarning("No CV found for doctor ID: {Id}", id);
+                    return NotFound();
+                }
+
+                _logger.LogInformation("Successfully retrieved CV for doctor ID: {Id}", id);
+                return File(cvData, "application/pdf", $"doctor_cv_{id}.pdf");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving doctor CV for ID: {Id}", id);
                 return StatusCode(500, "Error retrieving CV");
             }
         }
-        
+        [HttpPost("extract-cv/{doctorId}")]
+        public async Task<IActionResult> ExtractCvText(int doctorId)
+        {
+            try
+            {
+                var cvText = await package.ExtractAndStoreCvTextAsync(doctorId);
+                return Ok(new { text = cvText });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error extracting CV text for doctor {DoctorId}", doctorId);
+                return StatusCode(500, "An error occurred while processing the CV");
+            }
+        }
+
         [HttpGet]
         public IActionResult GetDoctorCards()
         {
@@ -174,5 +219,52 @@ namespace HospitalAPI.Controller
                 );
             }
         }
+
+        [HttpGet("specialty-count/{categoryName}")]
+        public ActionResult<int> GetSpecialtyCount(string categoryName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(categoryName))
+                {
+                    return BadRequest("Category name cannot be empty");
+                }
+
+                var count = package.GetCategoryCount(categoryName);
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting specialty count for {category}", categoryName);
+                return StatusCode(500, "An error occurred while processing your request");
+            }
+        }
+
+        [HttpPut("update/{id}")]
+        public async Task<IActionResult> UpdateDoctor(int id, [FromForm] UpdateDoctorDto doctor, IFormFile? photo = null, IFormFile? cv = null)
+        {
+            try
+            {
+                _logger.LogInformation("Updating doctor with ID {DoctorId}", id);
+
+              
+
+                var (success, message) = await package.UpdateDoctor(id, doctor, photo, cv);
+
+                if (!success)
+                {
+                    return BadRequest(new { message });
+                }
+
+                var updatedDoctor = package.GetDoctorById(id);
+                return Ok(new { message = "Doctor Updated Successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating doctor with ID {DoctorId}", id);
+                return StatusCode(500, new { message = "An error occurred while updating the doctor" });
+            }
+        }
+
     }                                                                                                                                                               
 }

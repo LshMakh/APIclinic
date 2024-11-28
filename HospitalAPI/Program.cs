@@ -1,6 +1,7 @@
 
 using AuthProjWebApi.Auth;
 using AuthProjWebApi.Packages;
+using HospitalAPI.CONTENT.Packages;
 using HospitalAPI.Models;
 using HospitalAPI.Packages;
 using HospitalAPI.Services;
@@ -31,12 +32,14 @@ namespace AuthProjWebApi
             builder.Logging.AddConsole();
             builder.Logging.AddDebug();
             builder.Services.Configure<MailjetSettings>(builder.Configuration.GetSection("Mailjet"));
+            builder.Services.AddScoped<IPdfService, PdfService>();
             builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddScoped<IPKG_VERIFICATION, PKG_VERIFICATION>();
             builder.Services.AddScoped<IPKG_DOCTOR, PKG_DOCTOR>();
-            builder.Services.AddScoped<IPKG_APPONTMENT, PKG_APPOINTMENT>();
             builder.Services.AddScoped<IPKG_PATIENT, PKG_PATIENT>();
             builder.Services.AddScoped<IPKG_USERS, PKG_USERS>();
+            builder.Services.AddScoped<IPKG_APPOINTMENT, PKG_APPOINTMENT>();
+
             builder.Services.AddScoped<IJwtManager, JwtManager>();
 
 

@@ -51,7 +51,7 @@ namespace HospitalAPI.Packages
                 errorMessage = $"File size exceeds maximum limit of {maxSize / (1024 * 1024)}MB";
                 return false;
             }
-
+            e
             if (!allowedTypes.Contains(file.ContentType.ToLower()))
             {
                 errorMessage = $"File type not allowed. Allowed types: {string.Join(", ", allowedTypes)}";
@@ -264,14 +264,12 @@ namespace HospitalAPI.Packages
         {
             try
             {
-                // Get the CV data
                 var cvData = await GetDoctorCV(doctorId);
                 if (cvData == null || cvData.Length == 0)
                 {
                     throw new InvalidOperationException($"No CV found for doctor ID {doctorId}");
                 }
 
-                // Extract text from PDF
                 var cvText = await _pdfService.ExtractTextFromPdfAsync(cvData);
 
            

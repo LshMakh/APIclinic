@@ -85,7 +85,31 @@ namespace HospitalAPI.Controller
                 return StatusCode(500, new { message = "An error occurred while checking email existence" });
             }
         }
-        [HttpPost("change-password")]
+        [HttpPut("change-password/admin")]
+        public IActionResult ChangePasswordAdmin([FromBody] PasswordChangeAdminDto model)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                
+
+                var success = package.ChangePasswordAdmin(model.UserId, model.Password);
+
+
+                return Ok(new { message = "Password changed successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error changing password for user {UserId}",
+                    model.UserId);
+                return StatusCode(500, new { message = "An error occurred while changing password" });
+            }
+        }
+        [HttpPut("change-password")]
         public IActionResult ChangePassword([FromBody] PasswordChangeDto model)
         {
             try
@@ -114,7 +138,7 @@ namespace HospitalAPI.Controller
             }
         }
         [HttpPost("forgot-password")]
-        public IActionResult ForgotPassword([FromBody] string email)
+        public IActionResult ForgotPassword([FromBody] ResetPasswordDto model)
         {
             try
             {
@@ -123,11 +147,10 @@ namespace HospitalAPI.Controller
                     return BadRequest(ModelState);
                 }
 
-                var success = package.ResetPassword(email);
+                var success = package.ResetPassword(model.Email);
 
                 if (!success)
                 {
-                    // Don't reveal whether the email exists or not for security
                     return Ok(new { message = "If your email is registered, you will receive a password reset email shortly." });
                 }
 
@@ -135,7 +158,7 @@ namespace HospitalAPI.Controller
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing forgot password request for email {Email}", email);
+                _logger.LogError(ex, "Error processing forgot password request for email {Email}", model.Email);
                 return StatusCode(500, new { message = "An error occurred while processing your request" });
             }
         }

@@ -14,4 +14,12 @@ namespace HospitalAPI.DTO_s
         [Compare("NewPassword", ErrorMessage = "The new password and confirmation password do not match.")]
         public string ConfirmPassword { get; set; }
     }
+
+    public class PasswordChangeAdminDto
+    {   
+        [Required]
+        public int UserId { get; set; }
+        [Required]
+        public string Password { get; set; }
+    }
 }

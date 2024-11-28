@@ -33,7 +33,6 @@ namespace HospitalAPI.Packages
         }
         private string GenerateRandomPassword()
         {
-            // Generate a random password that meets our requirements
             const string upperCase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
             const string lowerCase = "abcdefghijklmnopqrstuvwxyz";
             const string numbers = "0123456789";
@@ -42,20 +41,17 @@ namespace HospitalAPI.Packages
             var random = new Random();
             var password = new StringBuilder();
 
-            // Ensure at least one of each required character type
             password.Append(upperCase[random.Next(upperCase.Length)]);
             password.Append(lowerCase[random.Next(lowerCase.Length)]);
             password.Append(numbers[random.Next(numbers.Length)]);
             password.Append(special[random.Next(special.Length)]);
 
-            // Fill the rest with random characters
             const string allChars = upperCase + lowerCase + numbers + special;
             for (int i = 0; i < 8; i++)
             {
                 password.Append(allChars[random.Next(allChars.Length)]);
             }
 
-            // Shuffle the password
             return new string(password.ToString().ToCharArray()
                 .OrderBy(x => random.Next()).ToArray());
         }
@@ -68,7 +64,6 @@ namespace HospitalAPI.Packages
                     conn.Open();
                     using (OracleCommand cmd = conn.CreateCommand())
                     {
-                        // Generate a random password
                         string newPassword = GenerateRandomPassword();
 
                         cmd.CommandText = "olerning.PKG_LSH_USERS.reset_password";
@@ -84,7 +79,6 @@ namespace HospitalAPI.Packages
 
                         if (success)
                         {
-                            // Send email with new password
                              _emailService.SendPasswordResetEmailAsync(email, newPassword);
                         }
 
@@ -115,14 +109,11 @@ namespace HospitalAPI.Packages
                         cmd.CommandText = "olerning.PKG_LSH_USERS.get_user_by_email";
                         cmd.CommandType = CommandType.StoredProcedure;
 
-                        // Add parameters
                         cmd.Parameters.Add("p_email", OracleDbType.Varchar2).Value = email;
                         cmd.Parameters.Add("p_exists", OracleDbType.Int32).Direction = ParameterDirection.Output;
 
-                        // Execute the procedure
                         cmd.ExecuteNonQuery();
 
-                        // Get the result
                         int exists = Convert.ToInt32(cmd.Parameters["p_exists"].Value.ToString());
                         return exists == 1;
                     }
@@ -151,7 +142,6 @@ namespace HospitalAPI.Packages
                         cmd.CommandText = "olerning.PKG_LSH_USERS.get_user_details";
                         cmd.CommandType = CommandType.StoredProcedure;
 
-                        // Add parameters
                         cmd.Parameters.Add("p_userid", OracleDbType.Int32).Value = userId;
                         cmd.Parameters.Add("p_result", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
 
@@ -183,6 +173,7 @@ namespace HospitalAPI.Packages
                                         return new User
                                         {
                                             UserId = reader.GetInt32(reader.GetOrdinal("userid")),
+                                            PatientId = reader.GetInt32(reader.GetOrdinal("patientid")),
                                             Role = role,
                                             FirstName = reader["firstname"].ToString(),
                                             LastName = reader["lastname"].ToString(),
@@ -238,28 +229,27 @@ namespace HospitalAPI.Packages
                         {
                             if (reader.Read())
                             {
-                                // Check if any results were returned
                                 if (reader["USERID"] != DBNull.Value)
                                 {
                                     return new TokenPayloadDto
                                     {
                                         UserId = Convert.ToInt32(reader["USERID"]),
-                                        Role = reader["ROLE"].ToString()
+                                        Role = reader["ROLE"].ToString(),
+                                        PatientId = reader["patientid"] != DBNull.Value ? Convert.ToInt32(reader["patientid"]):null,
+                                        DoctorId = reader["doctorid"] != DBNull.Value ? Convert.ToInt32(reader["doctorid"]):null
                                     };
                                 }
                             }
-                            return null; // No user found with these credentials
+                            return null;
                         }
                     }
                 }
                 catch (OracleException ex)
                 {
-                    // Log the specific Oracle error
                     throw new Exception($"Database error during authentication: {ex.Message}", ex);
                 }
                 catch (Exception ex)
                 {
-                    // Log the general error
                     throw new Exception($"Error during authentication: {ex.Message}", ex);
                 }
             }

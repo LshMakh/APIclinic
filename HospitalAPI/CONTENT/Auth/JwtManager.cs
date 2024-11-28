@@ -27,15 +27,15 @@ namespace AuthProjWebApi.Auth
         {
             try
             {
-                // Get JWT settings from configuration
                 var key = Encoding.UTF8.GetBytes(_configuration["JWT:Key"]);
                 var tokenHandler = new JwtSecurityTokenHandler();
 
-                // Create claims
                 var claims = new List<Claim>
                 {
                     new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
                     new Claim(ClaimTypes.Role, user.Role),
+                    new Claim("PatientId", user.PatientId.ToString()),
+                    new Claim("DoctorId", user.DoctorId.ToString())
                    
                 };
 
@@ -44,7 +44,7 @@ namespace AuthProjWebApi.Auth
                 var tokenDescriptor = new SecurityTokenDescriptor
                 {
                     Subject = new ClaimsIdentity(claims),
-                    Expires = DateTime.UtcNow.AddHours(1), // Token expires after 1 hour
+                    Expires = DateTime.UtcNow.AddHours(1),
                     SigningCredentials = new SigningCredentials(
                         new SymmetricSecurityKey(key),
                         SecurityAlgorithms.HmacSha256Signature

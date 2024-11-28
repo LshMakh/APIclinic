@@ -1,146 +1,356 @@
 ﻿using AuthProjWebApi.Packages;
-using HospitalAPI.DTO_s;
+using HospitalAPI.CONTENT.DTO_s;
 using HospitalAPI.Models;
 using Oracle.ManagedDataAccess.Client;
-using Oracle.ManagedDataAccess.Types;
 using System.Data;
-using System.Security.Claims;
 
-namespace HospitalAPI.Packages
+namespace HospitalAPI.CONTENT.Packages
 {
-    public interface IPKG_APPONTMENT
+    public interface IPKG_APPOINTMENT
     {
-        public List<Appointment> GetDoctorAppointments(int DoctorId);
-        public List<Appointment> GetPatientAppointments(int PatientId);
-        public int CreateAppointment(CreateAppointmentDTO dto);
-        //List<DoctorAvailabilityDto> GetDoctorAvailability(int DoctorId);
+        Task<(bool success, int appointmentId)> CreateAppointment(int doctorId, int patientId, DateTime date, string timeSlot, string description);
+        Task<bool> BlockTimeSlot(int doctorId, DateTime date, string timeSlot);
+        Task<List<Appointment>> GetDoctorAppointments(int doctorId);
+        Task<List<Appointment>> GetPatientAppointments(int patientId);
+        Task<bool> UpdateAppointmentDescription(int appointmentId, string description);
+        Task<bool> DeleteAppointment(int appointmentId, int userId, bool isDoctor);
+        Task<bool> CheckSlotAvailability(int doctorId, DateTime date, string timeSlot);
+        Task<List<TimeSlotDto>> GetAvailableSlots(int doctorId, DateTime date);
     }
-    public class PKG_APPOINTMENT : PKG_BASE, IPKG_APPONTMENT
+    public class PKG_APPOINTMENT : PKG_BASE, IPKG_APPOINTMENT
     {
-        private readonly ILogger<PKG_APPOINTMENT> logger;
+        private readonly ILogger<PKG_APPOINTMENT> _logger;
 
         public PKG_APPOINTMENT(ILogger<PKG_APPOINTMENT> logger)
         {
-            this.logger = logger;
+            _logger = logger;
         }
-        public List <Appointment> GetDoctorAppointments(int doctorId)
+
+        public async Task<(bool success, int appointmentId)> CreateAppointment(int doctorId, int patientId, DateTime date,
+        string timeSlot, string description)
         {
-            var appointments = new List<Appointment>();
             using (var conn = new OracleConnection(ConnStr))
             {
-                conn.Open();
+                await conn.OpenAsync();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.create_appointment";
+                    cmd.CommandType = CommandType.StoredProcedure;
 
+                    cmd.Parameters.Add("p_doctor_id", OracleDbType.Int32).Value = doctorId;
+                    cmd.Parameters.Add("p_patient_id", OracleDbType.Int32).Value = patientId;
+                    cmd.Parameters.Add("p_appointment_date", OracleDbType.Date).Value = date.Date;
+                    cmd.Parameters.Add("p_time_slot", OracleDbType.Varchar2).Value = timeSlot;
+                    cmd.Parameters.Add("p_description", OracleDbType.Varchar2).Value = description ?? "";
+
+                    var p_appointment_id = new OracleParameter("p_appointment_id", OracleDbType.Int32)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(p_appointment_id);
+
+                    var p_success = new OracleParameter("p_success", OracleDbType.Int32)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(p_success);
+
+                    try
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                        return (
+                            Convert.ToInt32(p_success.Value.ToString()) == 1,
+                            Convert.ToInt32(p_appointment_id.Value.ToString())
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error creating appointment for doctor {DoctorId}", doctorId);
+                        return (false, 0);
+                    }
+                }
+            }
+        }
+
+        public async Task<bool> BlockTimeSlot(int doctorId, DateTime date, string timeSlot)
+        {
+            using (var conn = new OracleConnection(ConnStr))
+            {
+                await conn.OpenAsync();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.block_time_slot";
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("p_doctor_id", OracleDbType.Int32).Value = doctorId;
+                    cmd.Parameters.Add("p_appointment_date", OracleDbType.Date).Value = date.Date;
+                    cmd.Parameters.Add("p_time_slot", OracleDbType.Varchar2).Value = timeSlot;
+
+                    var p_success = new OracleParameter("p_success", OracleDbType.Int32)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(p_success);
+
+                    try
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                        return Convert.ToInt32(p_success.Value.ToString()) == 1;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error blocking time slot for doctor {DoctorId}", doctorId);
+                        return false;
+                    }
+                }
+            }
+        }
+
+        public async Task<List<Appointment>> GetDoctorAppointments(int doctorId)
+        {
+            using (var conn = new OracleConnection(ConnStr))
+            {
+                await conn.OpenAsync();
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.get_doctor_appointments";
                     cmd.CommandType = CommandType.StoredProcedure;
 
                     cmd.Parameters.Add("p_doctor_id", OracleDbType.Int32).Value = doctorId;
-                    cmd.Parameters.Add("p_result",OracleDbType.RefCursor).Direction = ParameterDirection.Output;
+                
+                    cmd.Parameters.Add("p_result", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
 
-                    using(var reader = cmd.ExecuteReader())
+                    try
                     {
-                        while (reader.Read())
+                        var appointments = new List<Appointment>();
+                        using (var reader = await cmd.ExecuteReaderAsync())
                         {
-                            appointments.Add(new Appointment
+                            while (await reader.ReadAsync())
                             {
-                                AppointmentId = reader.GetInt32(reader.GetOrdinal("id")),
-                                DoctorId = doctorId,
-                                PatientName = $"{reader["patient_first_name"]} {reader["patient_last_name"]}",
-                                AppointmentDateTime = reader.GetDateTime(reader.GetOrdinal("appointment_date")),
-                                TimeSlot = reader["time_slot"].ToString(),
-                                Description = reader["description"]?.ToString(),
-                                UserId = reader.GetInt32(reader.GetOrdinal("patient_id"))
-
-                            });
+                                appointments.Add(new Appointment
+                                {
+                                    AppointmentId = reader.GetInt32(reader.GetOrdinal("appointment_id")),
+                                    DoctorId = reader.GetInt32(reader.GetOrdinal("doctor_id")),
+                                    PatientId = reader.GetInt32(reader.GetOrdinal("patient_id")),
+                                    AppointmentDate = reader.GetDateTime(reader.GetOrdinal("appointment_date")),
+                                    TimeSlot = reader.GetString(reader.GetOrdinal("time_slot")),
+                                    Description = reader.IsDBNull(reader.GetOrdinal("description")) ? null :
+                                        reader.GetString(reader.GetOrdinal("description")),
+                                    IsBlocked = Convert.ToBoolean(reader.GetInt32(reader.GetOrdinal("is_blocked"))),
+                                    PatientFirstName = reader.IsDBNull(reader.GetOrdinal("patient_firstname")) ? null :
+                                        reader.GetString(reader.GetOrdinal("patient_firstname")),
+                                    PatientLastName = reader.IsDBNull(reader.GetOrdinal("patient_lastname")) ? null :
+                                        reader.GetString(reader.GetOrdinal("patient_lastname"))
+                                });
+                            }
                         }
+                        return appointments;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error getting appointments for doctor {DoctorId}", doctorId);
+                        throw;
                     }
                 }
             }
-            return appointments;
         }
-        public List<Appointment> GetPatientAppointments(int patientId)
-        {
-            var appointments = new List<Appointment>();
 
+        public async Task<List<Appointment>> GetPatientAppointments(int patientId)
+        {
             using (var conn = new OracleConnection(ConnStr))
             {
-                conn.Open();
-
+                await conn.OpenAsync();
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.get_patient_appointments";
                     cmd.CommandType = CommandType.StoredProcedure;
 
                     cmd.Parameters.Add("p_patient_id", OracleDbType.Int32).Value = patientId;
+                
                     cmd.Parameters.Add("p_result", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
 
-                    using (var reader = cmd.ExecuteReader())
+                    try
                     {
-                        while (reader.Read())
+                        var appointments = new List<Appointment>();
+                        using (var reader = await cmd.ExecuteReaderAsync())
                         {
-                            appointments.Add(new Appointment
+                            while (await reader.ReadAsync())
                             {
-                                AppointmentId = reader.GetInt32(reader.GetOrdinal("id")),
-                                DoctorId = reader.GetInt32(reader.GetOrdinal("doctor_id")),
-                                DoctorName = $"{reader["doctor_first_name"]} {reader["doctor_last_name"]}",
-                                AppointmentDateTime = reader.GetDateTime(reader.GetOrdinal("appointment_date")),
-                                TimeSlot = reader["time_slot"].ToString(),
-                                Description = reader["description"]?.ToString(),
-                                UserId = patientId
-                            });
+                                appointments.Add(new Appointment
+                                {
+                                    AppointmentId = reader.GetInt32(reader.GetOrdinal("appointment_id")),
+                                    DoctorId = reader.GetInt32(reader.GetOrdinal("doctor_id")),
+                                    PatientId = reader.GetInt32(reader.GetOrdinal("patient_id")),
+                                    AppointmentDate = reader.GetDateTime(reader.GetOrdinal("appointment_date")),
+                                    TimeSlot = reader.GetString(reader.GetOrdinal("time_slot")),
+                                    Description = reader.IsDBNull(reader.GetOrdinal("description")) ? null :
+                                        reader.GetString(reader.GetOrdinal("description")),
+                                    DoctorFirstName = reader.GetString(reader.GetOrdinal("doctor_firstname")),
+                                    DoctorLastName = reader.GetString(reader.GetOrdinal("doctor_lastname")),
+                                    DoctorSpecialty = reader.GetString(reader.GetOrdinal("doctor_specialty"))
+                                });
+                            }
                         }
+                        return appointments;
                     }
-                }
-            }
-            return appointments;
-        }
-
-        public int CreateAppointment(CreateAppointmentDTO appointment)
-        {
-            try
-            {
-                using (var conn = new OracleConnection(ConnStr))
-                {
-                    conn.Open();
-
-                    using (var cmd = conn.CreateCommand())
+                    catch (Exception ex)
                     {
-                        cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.create_appointment";
-                        cmd.CommandType = CommandType.StoredProcedure;
-
-                        cmd.Parameters.Add("p_doctor_id", OracleDbType.Int32).Value = appointment.DoctorId;
-                        cmd.Parameters.Add("p_patient_id", OracleDbType.Int32).Value = appointment.PatientId;
-                        cmd.Parameters.Add("p_date", OracleDbType.Date).Value = appointment.AppointmentDate.Date;
-                        cmd.Parameters.Add("p_time_slot", OracleDbType.Varchar2).Value = appointment.TimeSlot;
-                        cmd.Parameters.Add("p_description", OracleDbType.Varchar2).Value =
-                            appointment.Description ?? (object)DBNull.Value;
-
-                        var outputParam = cmd.Parameters.Add("p_appointment_id", OracleDbType.Int32);
-                        outputParam.Direction = ParameterDirection.Output;
-
-                        cmd.ExecuteNonQuery();
-
-                        if (outputParam.Value == DBNull.Value)
-                        {
-                            throw new Exception("Failed to get appointment ID from database");
-                        }
-
-                        return ((OracleDecimal)outputParam.Value).ToInt32();
+                        _logger.LogError(ex, "Error getting appointments for patient {PatientId}", patientId);
+                        throw;
                     }
                 }
             }
-            catch (OracleException ex)
+        }
+
+        public async Task<bool> UpdateAppointmentDescription(int appointmentId, string description)
+        {
+            using (var conn = new OracleConnection(ConnStr))
             {
-                logger.LogError(ex, "Database error creating appointment for Doctor {DoctorId} and Patient {PatientId}",
-                    appointment.DoctorId, appointment.PatientId);
-                throw new Exception("Failed to create appointment: " + ex.Message);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error creating appointment");
-                throw;
+                await conn.OpenAsync();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.update_appointment_description";
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("p_appointment_id", OracleDbType.Int32).Value = appointmentId;
+                    cmd.Parameters.Add("p_description", OracleDbType.Varchar2).Value = description;
+
+                    var p_success = new OracleParameter("p_success", OracleDbType.Int32)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(p_success);
+
+                    try
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                        return Convert.ToInt32(p_success.Value.ToString()) == 1;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error updating appointment {AppointmentId}", appointmentId);
+                        return false;
+                    }
+                }
             }
         }
+
+        public async Task<bool> DeleteAppointment(int appointmentId, int userId, bool isDoctor)
+        {
+            using (var conn = new OracleConnection(ConnStr))
+            {
+                await conn.OpenAsync();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.delete_appointment";
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("p_appointment_id", OracleDbType.Int32).Value = appointmentId;
+                    cmd.Parameters.Add("p_user_id", OracleDbType.Int32).Value = userId;
+                    cmd.Parameters.Add("p_is_doctor", OracleDbType.Int32).Value = isDoctor ? 1 : 0;
+
+                    var p_success = new OracleParameter("p_success", OracleDbType.Int32)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(p_success);
+
+                    try
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                        return Convert.ToInt32(p_success.Value.ToString()) == 1;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error deleting appointment {AppointmentId}", appointmentId);
+                        return false;
+                    }
+                }
+            }
+        }
+
+        public async Task<bool> CheckSlotAvailability(int doctorId, DateTime date, string timeSlot)
+        {
+            using (var conn = new OracleConnection(ConnStr))
+            {
+                await conn.OpenAsync();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.check_slot_availability";
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("p_doctor_id", OracleDbType.Int32).Value = doctorId;
+                    cmd.Parameters.Add("p_appointment_date", OracleDbType.Date).Value = date.Date;
+                    cmd.Parameters.Add("p_time_slot", OracleDbType.Varchar2).Value = timeSlot;
+
+                    var p_is_available = new OracleParameter("p_is_available", OracleDbType.Int32)
+                    {
+                        Direction = ParameterDirection.Output
+                    };
+                    cmd.Parameters.Add(p_is_available);
+
+                    try
+                    {
+                        await cmd.ExecuteNonQueryAsync();
+                        return Convert.ToInt32(p_is_available.Value.ToString()) == 1;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error checking slot availability for doctor {DoctorId}", doctorId);
+                        return false;
+                    }
+                }
+            }
+        }
+
+        public async Task<List<TimeSlotDto>> GetAvailableSlots(int doctorId, DateTime date)
+        {
+            using (var conn = new OracleConnection(ConnStr))
+            {
+                await conn.OpenAsync();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "olerning.PKG_LSH_APPOINTMENTS.get_available_slots";
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("p_doctor_id", OracleDbType.Int32).Value = doctorId;
+                    cmd.Parameters.Add("p_date", OracleDbType.Date).Value = date.Date;
+                    cmd.Parameters.Add("p_result", OracleDbType.RefCursor).Direction = ParameterDirection.Output;
+
+                    try
+                    {
+                        var slots = new List<TimeSlotDto>();
+                        using (var reader = await cmd.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                var slot = new TimeSlotDto
+                                {
+                                    TimeSlot = reader.GetString(reader.GetOrdinal("time_slot")),
+                                    IsAvailable = !reader.IsDBNull(reader.GetOrdinal("is_available"))
+                                        ? reader.GetInt32(reader.GetOrdinal("is_available")) == 1
+                                        : false,
+                                    IsBlocked = !reader.IsDBNull(reader.GetOrdinal("is_blocked"))
+                                        ? reader.GetInt32(reader.GetOrdinal("is_blocked")) == 1
+                                        : false,
+                                    PatientId = !reader.IsDBNull(reader.GetOrdinal("patient_id"))
+                                        ? reader.GetInt32(reader.GetOrdinal("patient_id"))
+                                        : null
+                                };
+                                slots.Add(slot);
+                            }
+                        }
+                        return slots;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error getting available slots for doctor {DoctorId}. Details: {Message}",
+                            doctorId, ex.Message);
+                        throw;
+                    }
+                }
+            }
+        }
+
     }
 }
