@@ -185,7 +185,8 @@ namespace HospitalAPI.Packages
                                         return new AdminDetailsDto
                                         {
                                             UserId = reader.GetInt32(reader.GetOrdinal("userid")),
-                                            Role = role,
+                                            Role = role
+                                            
                                         };
 
                                     default:
@@ -220,7 +221,6 @@ namespace HospitalAPI.Packages
                         cmd.CommandText = "olerning.PKG_LSH_USERS.authenticate_user";
                         cmd.CommandType = CommandType.StoredProcedure;
 
-                        // Add parameters
                         cmd.Parameters.Add("p_email", OracleDbType.Varchar2).Value = loginData.Email;
                         cmd.Parameters.Add("p_password", OracleDbType.Varchar2).Value = loginData.Password;
                         cmd.Parameters.Add("p_result", OracleDbType.RefCursor).Direction = ParameterDirection.Output;

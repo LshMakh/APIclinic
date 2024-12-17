@@ -51,7 +51,7 @@ namespace HospitalAPI.Packages
                 errorMessage = $"File size exceeds maximum limit of {maxSize / (1024 * 1024)}MB";
                 return false;
             }
-            e
+            
             if (!allowedTypes.Contains(file.ContentType.ToLower()))
             {
                 errorMessage = $"File type not allowed. Allowed types: {string.Join(", ", allowedTypes)}";
@@ -68,7 +68,6 @@ namespace HospitalAPI.Packages
                 return (false, $"A user with email {doctor.Email} already exists.");
             }
 
-            // Validate files
             if (!ValidateFile(photo, MAX_PHOTO_SIZE, ALLOWED_PHOTO_TYPES, out string photoError))
             {
                 return (false, $"Photo validation failed: {photoError}");
@@ -87,7 +86,6 @@ namespace HospitalAPI.Packages
                     cmd.CommandText = "olerning.PKG_LSH_DOCTORS.register_doctor";
                     cmd.CommandType = CommandType.StoredProcedure;
 
-                    // Convert files to byte arrays
                     using var photoStream = new MemoryStream();
                     await photo.CopyToAsync(photoStream);
                     byte[] photoData = photoStream.ToArray();
@@ -223,7 +221,6 @@ namespace HospitalAPI.Packages
                     {
                         await cmd.ExecuteNonQueryAsync();
 
-                        // Check status first
                         var status = Convert.ToInt32(cmd.Parameters["p_status"].Value.ToString());
                         if (status <= 0)
                         {
@@ -237,7 +234,6 @@ namespace HospitalAPI.Packages
                             return Array.Empty<byte>();
                         }
 
-                        // Handle the BLOB data
                         if (cvParam.Value is OracleBlob blob)
                         {
                             byte[] buffer = new byte[blob.Length];

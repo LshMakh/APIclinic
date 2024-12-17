@@ -36,7 +36,8 @@ namespace HospitalAPI.Services
                     <p>Your password has been reset. Your new password is:</p>
                     <p style='font-size: 18px; font-weight: bold; padding: 10px; background-color: black; color:white;'>{newPassword}</p>
                     <p>For security reasons, we recommend changing this password after logging in.</p>
-                    <p>If you did not request this password reset, please contact support immediately.</p>")
+                    <p>If you did not request this password reset, please contact support immediately.</p>)
+                    <p>This is Simply a Test.</p> ")
                     .WithTo(new SendContact(toEmail))
                     .Build();
 
@@ -61,7 +62,7 @@ namespace HospitalAPI.Services
                 var email = new TransactionalEmailBuilder()
                     .WithFrom(new SendContact(_settings.SenderEmail, _settings.SenderName))
                     .WithSubject("Email Verification Code")
-                    .WithHtmlPart($"<h3>Your verification code is: {code}</h3><p>This code will expire in 2 minutes.</p>")
+                    .WithHtmlPart($"<h3>Your verification code is: {code}</h3><p>This code will expire in 2 minutes.</p><p>This is Simply a Test</p>")
                     .WithTo(new SendContact(toEmail))
                     .Build();
 

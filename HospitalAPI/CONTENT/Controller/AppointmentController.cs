@@ -22,29 +22,43 @@ namespace HospitalAPI.CONTENT.Controller
         }
 
         [HttpPost("book")]
-    public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentDto dto)
-    {
-        try
+        public async Task<IActionResult> CreateAppointment([FromBody] CreateAppointmentDto dto)
         {
-            var patientId = int.Parse(User.FindFirst("PatientId")?.Value);
-            var (success, appointmentId) = await _appointmentPackage.CreateAppointment(
-                dto.DoctorId, patientId, dto.AppointmentDate, dto.TimeSlot, dto.Description);
-
-            if (!success)
+            try
             {
-                return BadRequest(new { message = "Time slot is not available" });
+                var appointmentDate = dto.AppointmentDate.Date;
+                var patientId = int.Parse(User.FindFirst("PatientId")?.Value);
+
+                var isTimeSlotAvailable = await _appointmentPackage.CheckPatientTimeSlotAvailability(
+                patientId, dto.AppointmentDate, dto.TimeSlot);
+                if (patientId == null)
+                {
+                    return Unauthorized();
+                }
+
+                if (!isTimeSlotAvailable)
+                {
+                    return Conflict(new { message = "You already have an appointment scheduled for this time slot" });
+                }
+
+                var (success, appointmentId) = await _appointmentPackage.CreateAppointment(
+                    dto.DoctorId, patientId, appointmentDate, dto.TimeSlot, dto.Description);
+
+                if (!success)
+                {
+                    return BadRequest(new { message = "Time slot is not available" });
+                }
+
+                return Ok(new { appointmentId, message = "Appointment booked successfully" });
             }
-
-            return Ok(new { appointmentId, message = "Appointment booked successfully" });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating appointment");
+                return StatusCode(500, new { message = "An error occurred while booking the appointment" });
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error creating appointment");
-            return StatusCode(500, new { message = "An error occurred while booking the appointment" });
-        }
-    }
 
-    [HttpPost("block")]
+        [HttpPost("block")]
     public async Task<IActionResult> BlockTimeSlot([FromBody] BlockTimeSlotDto dto)
     {
         try
@@ -66,7 +80,39 @@ namespace HospitalAPI.CONTENT.Controller
         }
     }
 
-    [HttpGet("doctor")]
+
+        [HttpGet("count")]
+        public async Task<IActionResult> GetUserAppointmentCount()
+        {
+            try
+            {
+                int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier).Value);
+                int count = await _appointmentPackage.GetUserAppointmentCount(userId);
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving appointment count");
+                return StatusCode(500, new { message = "An error occurred while retrieving appointment count" });
+            }
+        }
+
+        [HttpGet("count/{id}")]
+        public async Task<IActionResult> GetDoctorAppointmentCount(int id)
+        {
+            try
+            {
+                int count = await _appointmentPackage.GetDoctorAppointmentCount(id);
+                return Ok(count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving appointment count");
+                return StatusCode(500, new { message = "An Error Occured while retrieving appointment count" });
+            }
+        }
+
+        [HttpGet("doctor")]
     public async Task<IActionResult> GetDoctorAppointments()
     {
         try
@@ -81,6 +127,21 @@ namespace HospitalAPI.CONTENT.Controller
             return StatusCode(500, new { message = "An error occurred while retrieving appointments" });
         }
     }
+        [HttpGet("doctor/{id}")]
+        public async Task<IActionResult> GetDoctorAppointmentsFromUser(int id)
+        {
+            try
+            {
+                
+                var appointments = await _appointmentPackage.GetDoctorAppointments(id);
+                return Ok(appointments);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving doctor appointments");
+                return StatusCode(500, new { message = "An error occurred while retrieving appointments" });
+            }
+        }
 
         [HttpGet("patient")]
         public async Task<IActionResult> GetPatientAppointments()
@@ -122,10 +183,9 @@ namespace HospitalAPI.CONTENT.Controller
         {
             try
             {   
-                var userId = int.Parse(User.FindFirst("PatientId")?.Value);
-                var isDoctor = User.IsInRole("DOCTOR");
+                
 
-                var success = await _appointmentPackage.DeleteAppointment(id, userId, isDoctor);
+                var success = await _appointmentPackage.DeleteAppointment(id);
                 if (!success)
                 {
                     return NotFound(new { message = "Appointment not found or cannot be deleted" });

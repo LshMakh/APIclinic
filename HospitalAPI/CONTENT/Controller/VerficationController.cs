@@ -20,7 +20,6 @@ namespace HospitalAPI.Controller
         }
 
    
-        /// Sends a verification code to the specified email address
    
         [HttpPost("send")]
         public async Task<IActionResult> SendVerificationCode([FromBody] EmailVerificationDto request)
@@ -42,7 +41,6 @@ namespace HospitalAPI.Controller
         }
 
 
-        /// Verifies the provided code for the specified email address
     
         [HttpPost("verify")]
         public async Task<IActionResult> VerifyCode([FromBody] EmailVerificationDto request)

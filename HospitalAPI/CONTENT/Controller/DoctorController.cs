@@ -145,13 +145,11 @@ namespace HospitalAPI.Controller
             }
             catch (InvalidOperationException ex)
             {
-                // Log the exception details here
                 return StatusCode(StatusCodes.Status400BadRequest,
                     new { message = "Invalid operation while retrieving doctor records.", error = ex.Message });
             }
             catch (Exception ex)
             {
-                // Log the exception details here
                 return StatusCode(StatusCodes.Status500InternalServerError,
                     new { message = "An unexpected error occurred while retrieving doctor records.", error = ex.Message });
             }
@@ -178,13 +176,11 @@ namespace HospitalAPI.Controller
             }
             catch (InvalidOperationException ex)
             {
-                // Log the exception details here
                 return StatusCode(StatusCodes.Status400BadRequest,
                     new { message = $"Invalid operation while retrieving doctor with ID {id}.", error = ex.Message });
             }
             catch (Exception ex)
             {
-                // Log the exception details here
                 return StatusCode(StatusCodes.Status500InternalServerError,
                     new { message = $"An unexpected error occurred while retrieving doctor with ID {id}.", error = ex.Message });
             }
