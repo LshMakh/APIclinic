@@ -1,6 +1,7 @@
 
 using AuthProjWebApi.Auth;
 using AuthProjWebApi.Packages;
+using HospitalAPI.CONTENT.Middleware;
 using HospitalAPI.CONTENT.Packages;
 using HospitalAPI.Models;
 using HospitalAPI.Packages;
@@ -120,7 +121,7 @@ namespace AuthProjWebApi
             app.UseCors("AllowAllCors");
             app.UseAuthentication();
             app.UseAuthorization();
-
+            //app.UseGlobalErrorHandling();
 
 
             app.MapControllers();
