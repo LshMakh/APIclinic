@@ -1,0 +1,28 @@
+create or replace package body PKG_LSH_PATIENTS is
+
+  PROCEDURE register_patient(p_email           IN VARCHAR2,
+                             p_password        IN VARCHAR2,
+                             p_first_name      IN VARCHAR2,
+                             p_last_name       IN VARCHAR2,
+                             p_personal_number IN VARCHAR2,
+                             p_user_id         OUT NUMBER) AS
+    v_user_id NUMBER;
+  BEGIN
+    INSERT INTO lsh_Users
+      (Email, Password, Role)
+    VALUES
+      (p_email, p_password, 'PATIENT')
+    RETURNING UserId INTO v_user_id;
+  
+    INSERT INTO lsh_Patients
+      (UserId, FirstName, LastName, PersonalNumber)
+    VALUES
+      (v_user_id, p_first_name, p_last_name, p_personal_number);
+  
+    p_user_id := v_user_id;
+    COMMIT;
+
+  END;
+
+
+end PKG_LSH_PATIENTS;

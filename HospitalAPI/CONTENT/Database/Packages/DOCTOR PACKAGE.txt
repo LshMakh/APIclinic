@@ -1,0 +1,250 @@
+create or replace package body PKG_LSH_DOCTORS is
+
+  --   PROCEDURE register_doctor(p_email           IN VARCHAR2,
+  --                             p_password        IN VARCHAR2,
+  --                             p_first_name      IN VARCHAR2,
+  --                             p_last_name       IN VARCHAR2,
+  --                             p_specialty       IN VARCHAR2,
+  --                             p_photo_url       in varchar2,
+  --                             p_cv_url          in varchar2,
+  --                             p_personal_number in varchar2,
+  --                             p_user_id         OUT NUMBER) AS
+  --     v_user_id NUMBER;
+  --   BEGIN
+  --     Insert into Users table
+  --     INSERT INTO lsh_users
+  --       (Email, Password, Role)
+  --     VALUES
+  --       (p_email, p_password, 'DOCTOR')
+  --     RETURNING UserId INTO v_user_id;
+  --   
+  --     Insert into Doctors table
+  --     INSERT INTO lsh_doctors
+  --       (UserId,
+  --        FirstName,
+  --        LastName,
+  --        Specialty,
+  --        PersonalNumber,
+  --        photourl,
+  --        cvurl)
+  --     VALUES
+  --       (v_user_id,
+  --        p_first_name,
+  --        p_last_name,
+  --        p_specialty,
+  --        p_personal_number,
+  --        p_photo_url,
+  --        p_cv_url);
+  --   
+  --     p_user_id := v_user_id;
+  --     COMMIT;
+  --   EXCEPTION
+  --     WHEN OTHERS THEN
+  --       ROLLBACK;
+  --       RAISE;
+  --   END;
+  --------------------------------------------------------------
+  PROCEDURE register_doctor(p_email           IN VARCHAR2,
+                            p_password        IN VARCHAR2,
+                            p_first_name      IN VARCHAR2,
+                            p_last_name       IN VARCHAR2,
+                            p_specialty       IN VARCHAR2,
+                            p_photo_data      IN BLOB,
+                            p_cv_data         IN BLOB,
+                            p_personal_number IN VARCHAR2,
+                            p_user_id         OUT NUMBER) IS
+  BEGIN
+    INSERT INTO lsh_users u
+      (u.email, u.password, u.role)
+    VALUES
+      (p_email, p_password, 'DOCTOR')
+    RETURNING userid INTO p_user_id;
+  
+    INSERT INTO lsh_doctors d
+      (d.userid,
+       d.specialty,
+       d.photo_data,
+       d.cv_data,
+       d.firstname,
+       d.lastname,
+       d.personalnumber)
+    VALUES
+      (p_user_id,
+       p_specialty,
+       p_photo_data,
+       p_cv_data,
+       p_first_name,
+       p_last_name,
+       p_personal_number);
+  
+    COMMIT;
+  EXCEPTION
+    WHEN OTHERS THEN
+      ROLLBACK;
+      RAISE;
+  END register_doctor;
+
+  PROCEDURE get_doctor_photo(p_id         IN NUMBER,
+                             p_photo_data OUT BLOB,
+                             p_status     OUT NUMBER) IS
+  BEGIN
+    p_status := 1;
+    SELECT photo_data
+      INTO p_photo_data
+      FROM lsh_doctors
+     WHERE doctorid = p_id
+       AND photo_data IS NOT NULL;
+  
+    IF p_photo_data IS NULL THEN
+      p_status := 0;
+    END IF;
+  
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      p_status := 0;
+    WHEN OTHERS THEN
+      p_status := -1;
+      RAISE;
+  END get_doctor_photo;
+
+  PROCEDURE get_doctor_cv(p_id      IN NUMBER,
+                          p_cv_data OUT BLOB,
+                          p_status  OUT NUMBER) IS
+  BEGIN
+    p_status := 1;
+  
+    SELECT cv_data
+      INTO p_cv_data
+      FROM lsh_doctors
+     WHERE doctorid = p_id
+       AND cv_data IS NOT NULL;
+  
+    IF p_cv_data IS NULL THEN
+      p_status := 0;
+    END IF;
+  
+  
+  END get_doctor_cv;
+
+  --------------------------------------------------------------
+  procedure get_doctor_cards(p_result out sys_refcursor) as
+  begin
+    open p_result for
+      select d.doctorid,
+             d.userid,
+             d.rating,
+             d.firstname,
+             d.lastname,
+             u.email,
+             d.personalnumber,
+             d.photourl,
+             d.specialty,
+             d.photo_data,
+             d.cv_data
+        from lsh_doctors d
+        join lsh_users u
+          on d.userid = u.userid;
+  end;
+
+  procedure get_doctor_by_id(p_id in number, p_result out sys_refcursor) as
+  begin
+    open p_result for
+      select u.userid,
+             u.email,
+             d.doctorid,
+             d.rating,
+             d.firstname,
+             d.personalnumber,
+             d.lastname,
+             d.photourl,
+             d.specialty,
+             d.photo_data,
+             d.cv_data
+        from lsh_doctors d
+        join lsh_users u
+          on d.userid = u.userid
+       where d.doctorid = p_id;
+  end;
+
+  PROCEDURE delete_doctor_by_id(p_id IN NUMBER) AS
+    v_userid NUMBER;
+  BEGIN
+  
+    SELECT userid INTO v_userid FROM lsh_doctors WHERE doctorid = p_id;
+  
+    DELETE FROM lsh_doctors WHERE doctorid = p_id;
+  
+    DELETE FROM lsh_users WHERE userid = v_userid;
+  
+    COMMIT;
+ 
+  END delete_doctor_by_id;
+
+  PROCEDURE get_category_count(p_category IN VARCHAR2, p_result OUT NUMBER) AS
+  BEGIN
+    SELECT COUNT(*)
+      INTO p_result
+      FROM lsh_doctors d
+     WHERE d.specialty = p_category;
+  
+  END get_category_count;
+
+  PROCEDURE update_doctor(p_doctor_id       IN NUMBER,
+                          p_first_name      IN VARCHAR2 DEFAULT NULL,
+                          p_last_name       IN VARCHAR2 DEFAULT NULL,
+                          p_email           IN VARCHAR2 DEFAULT NULL,
+                          p_specialty       IN VARCHAR2 DEFAULT NULL,
+                          p_personal_number IN VARCHAR2 DEFAULT NULL,
+                          p_photo_data      IN BLOB DEFAULT NULL,
+                          p_cv_data         IN BLOB DEFAULT NULL,
+                          p_success         OUT NUMBER) IS
+    v_user_id      NUMBER;
+    v_email_exists NUMBER;
+  BEGIN
+    SELECT u.userid
+      INTO v_user_id
+      FROM lsh_doctors d
+      JOIN lsh_users u
+        ON d.userid = u.userid
+     WHERE d.doctorid = p_doctor_id;
+  
+    IF p_email IS NOT NULL THEN
+      SELECT COUNT(*)
+        INTO v_email_exists
+        FROM lsh_users
+       WHERE email = p_email
+         AND userid != v_user_id;
+    
+      IF v_email_exists = 0 THEN
+        UPDATE lsh_users SET email = p_email WHERE userid = v_user_id;
+      ELSE
+        p_success := 0;
+        RETURN;
+      END IF;
+    END IF;
+  
+    UPDATE lsh_doctors
+       SET firstname      = COALESCE(p_first_name, firstname),
+           lastname       = COALESCE(p_last_name, lastname),
+           specialty      = COALESCE(p_specialty, specialty),
+           personalnumber = COALESCE(p_personal_number, personalnumber)
+     WHERE doctorid = p_doctor_id;
+  
+    IF p_photo_data IS NOT NULL THEN
+      UPDATE lsh_doctors
+         SET photo_data = p_photo_data
+       WHERE doctorid = p_doctor_id;
+    END IF;
+  
+    IF p_cv_data IS NOT NULL THEN
+      UPDATE lsh_doctors
+         SET cv_data = p_cv_data
+       WHERE doctorid = p_doctor_id;
+    END IF;
+  
+    p_success := 1;
+    COMMIT;
+ 
+  END;
+
+end PKG_LSH_DOCTORS;

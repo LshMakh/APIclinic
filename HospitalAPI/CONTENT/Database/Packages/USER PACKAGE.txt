@@ -1,0 +1,195 @@
+create or replace package body PKG_LSH_USERS is
+
+  PROCEDURE authenticate_user(
+    p_email    IN VARCHAR2,
+    p_password IN VARCHAR2,
+    p_result   OUT SYS_REFCURSOR
+) AS
+BEGIN
+    open p_result for
+        SELECT e.userid, 
+               e.role, 
+               p.patientid,
+               d.doctorid
+        FROM LSH_USERS e
+        LEFT JOIN lsh_patients p ON e.userid = p.userid
+        LEFT JOIN lsh_doctors d ON e.userid = d.userid
+        WHERE e.email = p_email
+        AND e.password = p_password; 
+END authenticate_user;
+
+  procedure get_user_by_email(p_email IN VARCHAR2, p_exists OUT NUMBER) AS
+  BEGIN
+    SELECT CASE
+             WHEN EXISTS (SELECT 1 FROM lsh_users u WHERE u.email = p_email) THEN
+              1
+             ELSE
+              0
+           END
+      INTO p_exists
+      FROM dual;
+
+  end;
+
+  PROCEDURE get_user_details(p_user_id IN NUMBER,
+                             p_result  OUT SYS_REFCURSOR) is
+    v_role varchar2(20);
+  begin
+    BEGIN
+      select role into v_role from lsh_users where userid = p_user_id;
+    end;
+    if v_role = 'DOCTOR' then
+      open p_result for
+        select u.userid,
+               u.role,
+               u.email,
+               d.doctorid,
+               d.firstname,
+               d.lastname,
+               d.rating,
+               d.specialty,
+               d.personalnumber,
+               d.cvurl,
+               d.photourl
+          from lsh_users u
+          join lsh_doctors d
+            on u.userid = d.userid
+         where u.userid = p_user_id;
+    elsif v_role = 'PATIENT' then
+      open p_result for
+        select u.userid,
+               u.email,
+               u.role,
+               p.firstname,
+               p.lastname,
+               p.patientid,
+               p.personalnumber
+          from lsh_users u
+          join lsh_patients p
+            on u.userid = p.userid
+         where u.userid = p_user_id;
+    else
+      open p_result for
+        select u.userid, u.role
+          from lsh_users u
+         where u.userid = p_user_id;
+    end if;
+  END get_user_details;
+
+  PROCEDURE change_password(p_user_id          IN NUMBER,
+                            p_current_password IN VARCHAR2,
+                            p_new_password     IN VARCHAR2,
+                            p_success          OUT NUMBER) AS
+    v_stored_password VARCHAR2(100);
+  BEGIN
+
+    SELECT password
+      INTO v_stored_password
+      FROM lsh_users
+     WHERE userid = p_user_id;
+  
+
+    IF v_stored_password = p_current_password THEN
+
+      UPDATE lsh_users
+         SET password = p_new_password
+       WHERE userid = p_user_id;
+    
+      COMMIT;
+      p_success := 1;
+    ELSE
+      p_success := 0;
+    END IF;
+
+  END change_password;
+
+  PROCEDURE reset_password(p_email        IN VARCHAR2,
+                           p_new_password IN VARCHAR2,
+                           p_success      OUT NUMBER) AS
+  BEGIN
+    UPDATE lsh_users SET password = p_new_password WHERE email = p_email;
+  
+    IF SQL%ROWCOUNT > 0 THEN
+      p_success := 1;
+      COMMIT;
+    ELSE
+      p_success := 0;
+    END IF;
+
+  END reset_password;
+
+PROCEDURE change_password_admin(p_id       IN NUMBER,
+                                p_password IN VARCHAR2,
+                                p_success  OUT NUMBER) AS
+BEGIN
+  UPDATE lsh_users SET password = p_password WHERE userid = p_id;
+
+ 
+  IF SQL%ROWCOUNT > 0 THEN
+    COMMIT; 
+    p_success := 1; 
+  ELSE
+    p_success := 0; 
+  END IF;
+
+EXCEPTION
+  WHEN OTHERS THEN
+  
+    ROLLBACK;
+    p_success := 0; 
+END change_password_admin;
+
+PROCEDURE update_doctor(
+    p_doctor_id IN NUMBER,
+    p_first_name IN VARCHAR2,
+    p_last_name IN VARCHAR2,
+    p_email IN VARCHAR2,
+    p_specialty IN VARCHAR2,
+    p_personal_number IN VARCHAR2,
+    p_photo_data IN BLOB DEFAULT NULL,
+    p_cv_data IN BLOB DEFAULT NULL,
+    p_success OUT NUMBER
+)
+IS
+    v_user_id NUMBER;
+    v_old_email VARCHAR2(100);
+BEGIN
+    SELECT u.userid, u.email 
+    INTO v_user_id, v_old_email 
+    FROM lsh_doctors d
+    JOIN lsh_users u ON d.userid = u.userid 
+    WHERE d.doctorid = p_doctor_id;
+
+    UPDATE lsh_users
+    SET email = p_email
+    WHERE userid = v_user_id;
+
+    UPDATE lsh_doctors
+    SET 
+        firstname = p_first_name,
+        lastname = p_last_name,
+        specialty = p_specialty,
+        personalnumber = p_personal_number
+    WHERE doctorid = p_doctor_id;
+
+    IF p_photo_data IS NOT NULL THEN
+        UPDATE lsh_doctors
+        SET photo_data = p_photo_data
+        WHERE doctorid = p_doctor_id;
+    END IF;
+
+    IF p_cv_data IS NOT NULL THEN
+        UPDATE lsh_doctors
+        SET cv_data = p_cv_data
+        WHERE doctorid = p_doctor_id;
+    END IF;
+
+    COMMIT;
+    p_success := 1;
+
+
+END;
+
+
+
+end PKG_LSH_USERS;

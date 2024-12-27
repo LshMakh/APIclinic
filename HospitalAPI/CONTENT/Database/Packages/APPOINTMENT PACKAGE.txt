@@ -1,0 +1,240 @@
+create or replace package body PKG_LSH_APPOINTMENTS is
+
+  PROCEDURE create_appointment(p_doctor_id        IN NUMBER,
+                               p_patient_id       IN NUMBER,
+                               p_appointment_date IN DATE,
+                               p_time_slot        IN VARCHAR2,
+                               p_description      IN VARCHAR2,
+                               p_appointment_id   OUT NUMBER,
+                               p_success          OUT NUMBER) IS
+    v_is_available NUMBER;
+  BEGIN
+    check_slot_availability(p_doctor_id,
+                            p_appointment_date,
+                            p_time_slot,
+                            v_is_available);
+  
+    IF v_is_available = 1 THEN
+      INSERT INTO lsh_appointments
+        (doctor_id, patient_id, appointment_date, time_slot, description)
+      VALUES
+        (p_doctor_id,
+         p_patient_id,
+         p_appointment_date,
+         p_time_slot,
+         p_description)
+      RETURNING appointment_id INTO p_appointment_id;
+    
+      p_success := 1;
+    ELSE
+      p_success := 0;
+    END IF;
+  
+  END create_appointment;
+
+  --for doctors
+  PROCEDURE block_time_slot(p_doctor_id        IN NUMBER,
+                            p_appointment_date IN DATE,
+                            p_time_slot        IN VARCHAR2,
+                            p_success          OUT NUMBER) IS
+    v_is_available NUMBER;
+  BEGIN
+    check_slot_availability(p_doctor_id,
+                            p_appointment_date,
+                            p_time_slot,
+                            v_is_available);
+  
+    IF v_is_available = 1 THEN
+      INSERT INTO lsh_appointments
+        (doctor_id, patient_id, appointment_date, time_slot, is_blocked)
+      VALUES
+        (p_doctor_id, null, p_appointment_date, p_time_slot, 1);
+    
+      p_success := 1;
+    ELSE
+      p_success := 0;
+    END IF;
+  
+  END block_time_slot;
+
+  PROCEDURE get_doctor_appointments(p_doctor_id IN NUMBER,
+                                    
+                                    p_result OUT SYS_REFCURSOR) IS
+  BEGIN
+    OPEN p_result FOR
+      SELECT a.*,
+             p.firstname as patient_firstname,
+             p.lastname  as patient_lastname
+        FROM lsh_appointments a
+        LEFT JOIN lsh_patients p
+          ON a.patient_id = p.patientid
+       WHERE a.doctor_id = p_doctor_id
+       ORDER BY a.appointment_date, a.time_slot;
+  END get_doctor_appointments;
+
+  PROCEDURE get_patient_appointments(p_patient_id IN NUMBER,
+                                     p_result     OUT SYS_REFCURSOR) IS
+  BEGIN
+    OPEN p_result FOR
+      SELECT a.*,
+             d.firstname as doctor_firstname,
+             d.lastname  as doctor_lastname,
+             d.specialty as doctor_specialty
+        FROM lsh_appointments a
+        JOIN lsh_doctors d
+          ON a.doctor_id = d.doctorid
+       WHERE a.patient_id = p_patient_id
+         AND a.is_blocked = 0
+      
+       ORDER BY a.appointment_date, a.time_slot;
+  END get_patient_appointments;
+
+  PROCEDURE update_appointment_description(p_appointment_id IN NUMBER,
+                                           p_description    IN VARCHAR2,
+                                           p_success        OUT NUMBER) IS
+  BEGIN
+    UPDATE lsh_appointments
+       SET description = p_description
+     WHERE appointment_id = p_appointment_id
+       AND is_blocked = 0;
+  
+    IF SQL%ROWCOUNT > 0 THEN
+      p_success := 1;
+    ELSE
+      p_success := 0;
+    END IF;
+  
+  END update_appointment_description;
+
+  PROCEDURE delete_appointment(p_appointment_id IN NUMBER,
+                               
+                               p_success OUT NUMBER) IS
+  BEGIN
+  
+    DELETE FROM lsh_appointments WHERE appointment_id = p_appointment_id;
+  
+    IF SQL%ROWCOUNT > 0 THEN
+      p_success := 1;
+    ELSE
+      p_success := 0;
+    END IF;
+  
+  END delete_appointment;
+
+  PROCEDURE check_slot_availability(p_doctor_id        IN NUMBER,
+                                    p_appointment_date IN DATE,
+                                    p_time_slot        IN VARCHAR2,
+                                    p_is_available     OUT NUMBER) IS
+    v_count NUMBER;
+  BEGIN
+    SELECT COUNT(*)
+      INTO v_count
+      FROM lsh_appointments
+     WHERE doctor_id = p_doctor_id
+       AND appointment_date = p_appointment_date
+       AND time_slot = p_time_slot;
+  
+    IF v_count = 0 THEN
+      p_is_available := 1;
+    ELSE
+      p_is_available := 0;
+    END IF;
+  END check_slot_availability;
+
+  PROCEDURE get_available_slots(p_doctor_id IN NUMBER,
+                                p_date      IN DATE,
+                                p_result    OUT SYS_REFCURSOR) IS
+  BEGIN
+    OPEN p_result FOR
+      WITH all_slots AS
+       (SELECT column_value as time_slot
+          FROM TABLE(sys.odcivarchar2list('09:00 - 10:00',
+                                          '10:00 - 11:00',
+                                          '11:00 - 12:00',
+                                          '12:00 - 13:00',
+                                          '13:00 - 14:00',
+                                          '14:00 - 15:00',
+                                          '15:00 - 16:00',
+                                          '16:00 - 17:00')))
+      SELECT s.time_slot,
+             CASE
+               WHEN a.appointment_id IS NULL THEN
+                1
+               ELSE
+                0
+             END as is_available,
+             a.is_blocked,
+             a.patient_id
+        FROM all_slots s
+        LEFT JOIN lsh_appointments a
+          ON a.doctor_id = p_doctor_id
+         AND a.appointment_date = p_date
+         AND a.time_slot = s.time_slot
+       ORDER BY s.time_slot;
+  END get_available_slots;
+
+  PROCEDURE get_doctor_appointment_count(p_doctor_id in number,
+                                         p_count     out number) is
+  begin
+    select count(*)
+      into p_count
+      from lsh_appointments
+     where doctor_id = p_doctor_id;
+  end;
+
+  PROCEDURE get_user_appointment_count(p_user_id IN NUMBER,
+                                       p_count   OUT NUMBER) IS
+    v_role       VARCHAR2(10);
+    v_patient_id NUMBER;
+    v_doctor_id  NUMBER;
+  BEGIN
+    SELECT role INTO v_role FROM lsh_users WHERE userid = p_user_id;
+  
+    IF v_role = 'PATIENT' THEN
+      SELECT patientid
+        INTO v_patient_id
+        FROM lsh_patients
+       WHERE userid = p_user_id;
+    
+      SELECT COUNT(*)
+        INTO p_count
+        FROM lsh_appointments
+       WHERE patient_id = v_patient_id
+         AND is_blocked = 0;
+    ELSIF v_role = 'DOCTOR' THEN
+      SELECT doctorid
+        INTO v_doctor_id
+        FROM lsh_doctors
+       WHERE userid = p_user_id;
+    
+      SELECT COUNT(*)
+        INTO p_count
+        FROM lsh_appointments
+       WHERE doctor_id = v_doctor_id;
+    ELSE
+      p_count := 0;
+    END IF;
+  
+  END get_user_appointment_count;
+
+  PROCEDURE check_patient_time_slot(p_patient_id       IN NUMBER,
+                                    p_appointment_date IN DATE,
+                                    p_time_slot        IN VARCHAR2,
+                                    p_is_available     OUT NUMBER) AS
+    v_count NUMBER;
+  BEGIN
+    SELECT COUNT(*)
+      INTO v_count
+      FROM lsh_appointments
+     WHERE patient_id = p_patient_id
+       AND appointment_date = p_appointment_date
+       AND time_slot = p_time_slot;
+  
+    IF v_count > 0 THEN
+      p_is_available := 0;
+    ELSE
+      p_is_available := 1;
+    END IF;
+  END;
+
+end PKG_LSH_APPOINTMENTS;

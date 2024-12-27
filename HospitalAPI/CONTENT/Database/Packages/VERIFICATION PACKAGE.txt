@@ -1,0 +1,34 @@
+CREATE OR REPLACE PACKAGE BODY PKG_LSH_VERIFICATION AS
+  PROCEDURE create_verification_code(p_email IN VARCHAR2,
+                                     p_code  IN VARCHAR2) AS
+  BEGIN
+    DELETE FROM lsh_user_verifications WHERE email = p_email;
+  
+    INSERT INTO lsh_user_verifications
+      (email, activation_code, expiry_date)
+    VALUES
+      (p_email, p_code, SYSTIMESTAMP + INTERVAL '2' MINUTE);
+  
+    COMMIT;
+ 
+  END create_verification_code;
+
+  PROCEDURE verify_code(p_email    IN VARCHAR2,
+                        p_code     IN VARCHAR2,
+                        p_is_valid OUT NUMBER) AS
+  BEGIN
+    SELECT COUNT(1)
+      INTO p_is_valid
+      FROM lsh_user_verifications
+     WHERE email = p_email
+       AND activation_code = p_code
+       AND expiry_date > SYSTIMESTAMP;
+  
+    DELETE FROM lsh_user_verifications
+     WHERE email = p_email
+       AND (activation_code = p_code OR expiry_date <= SYSTIMESTAMP);
+  
+    COMMIT;
+ 
+  END verify_code;
+END PKG_LSH_VERIFICATION;
